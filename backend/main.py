@@ -1,0 +1,67 @@
+from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from utils import extract_text_from_pdf, chunk_text
+import shutil
+import os
+
+#initialize
+app = FastAPI(title = "DocuMind API", version = "0.1.0")
+
+#add middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+#check server is alive Health check endpoint
+@app.get("/")
+def root():
+    return{"status":"server running", "messege" : "DocuMind API v0.1.0"}
+
+#ensure upload directory exists
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR,exist_ok=True)
+
+#upload endpoint
+@app.post("/upload")
+async def upload_pdf(file : UploadFile = File(...)):
+    #validate the file is a pdf
+    if not file.filename.endswith(".pdf"):
+        return {"error" : "Only PDF files are allowed"}
+
+    #save file to memory 
+    file_path = os.path.join(UPLOAD_DIR, file.filename)
+    with open(file_path, 'wb') as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    raw_text = extract_text_from_pdf(file_path)
+    chunks = chunk_text(raw_text, chunk_size=500, overlap=50)
+    
+    return {
+        "message": "File uploaded and processed successfully",
+        "filename": file.filename,
+        "total_chunks": len(chunks),
+        "total_characters": len(raw_text),
+        "chunks_preview": chunks[:3] if chunks else []
+    }
+
+
+#ask question endpint 
+#this will take the question from the frontend and return the answer
+#using LLM and vector store
+
+@app.post("/ask")
+def ask_question(payload : dict):
+    #extract qns from the incoming json payload
+    question = payload.get("question","")
+
+    if not question:
+        return {"error" : "Question is required"}
+    
+    #get the model response
+    return{
+        "Question " : question,
+        "answer ":"This is a placeholder answer. Real AI logic coming soon!",
+        "sources" : [],
+    }
