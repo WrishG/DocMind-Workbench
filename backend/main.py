@@ -3,6 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from utils import extract_text_from_pdf, chunk_text
 from vector_store import add_chunks_to_db, search_db, retrieve_and_rerank, get_chunks_for_file
 from llm import generate_answer, generate_summary, generate_quiz, generate_flashcards
+from database import documents_collection
+from models import DocumentMetadata
+
 import json
 import shutil
 import os
@@ -28,33 +31,36 @@ os.makedirs(UPLOAD_DIR,exist_ok=True)
 
 #upload endpoint
 @app.post("/upload")
-async def upload_pdf(file : UploadFile = File(...)):
-    #validate the file is a pdf
+async def upload_pdf(file: UploadFile = File(...)):
     if not file.filename.endswith(".pdf"):
-        return {"error" : "Only PDF files are allowed"}
+        return {"error": "Only PDF files are allowed"}
 
-    #save file to memory 
     file_path = os.path.join(UPLOAD_DIR, file.filename)
     with open(file_path, 'wb') as buffer:
         shutil.copyfileobj(file.file, buffer)
         
-    # extract_text_from_pdf returns a list of {page, text} dicts
     pages = extract_text_from_pdf(file_path)
-    # chunk_text splits those pages into smaller overlapping pieces
     chunks = chunk_text(pages, chunk_size=500, overlap=50)
     
-    # Embed chunks and save to ChromaDB + rebuild BM25 index
+    # 1. AI Layer: Save math to ChromaDB
     add_chunks_to_db(file.filename, chunks)
 
-    # Count total characters across all chunks for the response
-    total_chars = sum(len(c["text"]) for c in chunks)
+    # 2. FSD Layer: Save metadata to MongoDB
+    doc_record = DocumentMetadata(
+        filename=file.filename,
+        total_chunks=len(chunks)
+    )
+    
+    # Insert it into the cloud! (We use 'await' because it's a network call)
+    await documents_collection.insert_one(doc_record.model_dump(by_alias=True))
 
     return {
-        "message": "File uploaded and indexed successfully",
-        "filename": file.filename,
-        "total_chunks": len(chunks),
-        "total_characters": total_chars,
+        "message": "File uploaded, indexed, and saved to database!",
+        "document_id": doc_record.id,
+        "filename": file.filename
     }
+
+    
 
 
 #ask question endpint 
