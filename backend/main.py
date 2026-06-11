@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from utils import extract_text_from_pdf, chunk_text
 from vector_store import add_chunks_to_db,search_db
+from llm import generate_answer
 import shutil
 import os
 
@@ -64,16 +65,14 @@ def ask_question(payload : dict):
     
     #get the model response
     retrieved_docs=search_db(question,n_results=3)
+
+    final_answer = generate_answer(question=question, retrieved_chunks=retrieved_docs)
     
     return{
         "Question ": question,
-        "Answer " : "LLM generation coming soon",
-        "Retrieved Chunks" : retrieved_docs
+        "Answer " : final_answer,
+        "Sources" : [chunk["source"] for chunk in retrieved_docs]
 
     }
     
-    return{
-        "Question " : question,
-        "answer ":"This is a placeholder answer. Real AI logic coming soon!",
-        "sources" : [],
-    }
+    
