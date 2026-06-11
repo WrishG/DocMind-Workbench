@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from utils import extract_text_from_pdf, chunk_text
+from vector_store import add_chunks_to_db,search_db
 import shutil
 import os
 
@@ -38,6 +39,8 @@ async def upload_pdf(file : UploadFile = File(...)):
     raw_text = extract_text_from_pdf(file_path)
     chunks = chunk_text(raw_text, chunk_size=500, overlap=50)
     
+    #add to crimadb for embeddings
+    add_chunks_to_db(file.filename, chunks)
     return {
         "message": "File uploaded and processed successfully",
         "filename": file.filename,
@@ -60,6 +63,15 @@ def ask_question(payload : dict):
         return {"error" : "Question is required"}
     
     #get the model response
+    retrieved_docs=search_db(question,n_results=3)
+    
+    return{
+        "Question ": question,
+        "Answer " : "LLM generation coming soon",
+        "Retrieved Chunks" : retrieved_docs
+
+    }
+    
     return{
         "Question " : question,
         "answer ":"This is a placeholder answer. Real AI logic coming soon!",
