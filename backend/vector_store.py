@@ -19,21 +19,20 @@ collection = client.get_or_create_collection(
     embedding_function=embedding_model
 )
 
-def add_chunks_to_db(filename: str, chunks: list[str]):
-    """Takes raw text chunks, converts them to vectors, and saves them."""
+def add_chunks_to_db(filename: str, chunks: list[dict]):
+    """Takes chunk dictionaries, embeds the text, and saves metadata."""
     
-    # ChromaDB requires a unique ID for every single chunk
     ids = [f"{filename}_chunk_{i}" for i in range(len(chunks))]
     
-    # Metadata is crucial for Phase 3 (Citations!). 
-    # This tells us exactly WHICH pdf this chunk came from.
-    metadatas = [{"source": filename} for _ in range(len(chunks))]
+    # NEW: We extract the text strings for embedding
+    documents = [chunk["text"] for chunk in chunks]
+    
+    # NEW: We build metadata that includes BOTH source and page
+    metadatas = [{"source": filename, "page": chunk["page"]} for chunk in chunks]
     
     # Add them to the database!
-    # Because we linked `embedding_model` to our collection, ChromaDB will 
-    # automatically run the ML model on our chunks before saving them.
     collection.add(
-        documents=chunks,
+        documents=documents,
         metadatas=metadatas,
         ids=ids
     )
@@ -62,6 +61,7 @@ def search_db(query: str, n_results: int = 5):
         retrieved_chunks.append({
             "text": doc,
             "source": meta.get("source", "Unknown"),
+            "page": meta.get("page", "Unknown"),
             "distance": dist  # Lower distance means a better match!
         })
         

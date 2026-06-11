@@ -14,7 +14,7 @@ def generate_answer(question: str, retrieved_chunks: list[dict]) -> str:
     # 1. Combine the raw chunks into one big string for the LLM to read
     context_text = ""
     for i, chunk in enumerate(retrieved_chunks):
-        context_text += f"\n--- Chunk {i+1} (Source: {chunk['source']}) ---\n"
+        context_text += f"\n--- Chunk {i+1} (Source: {chunk['source']}, Page: {chunk.get('page', 'Unknown')}) ---\n"
         context_text += chunk["text"] + "\n"
 
     # 2. Build the System Prompt for Gemini

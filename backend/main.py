@@ -71,7 +71,7 @@ def ask_question(payload : dict):
     return{
         "Question ": question,
         "Answer " : final_answer,
-        "Sources" : [chunk["source"] for chunk in retrieved_docs]
+        "Sources" : [f"{chunk['source']} (Page {chunk.get('page', 'Unknown')})" for chunk in retrieved_docs]
 
     }
     

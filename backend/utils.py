@@ -1,25 +1,44 @@
 #mymupdf
 import fitz
-def extract_text_from_pdf(file_path : str) -> str:
-    #opens pdf extraact text form it
+import fitz
+
+def extract_text_from_pdf(file_path: str) -> list[dict]:
+    """Extracts text page by page, preserving the page number."""
     doc = fitz.open(file_path)
-    full_text = ""
-    #loop through every page and get text
+    pages = []
+    
     for page_num in range(len(doc)):
         page = doc[page_num]
-        full_text += page.get_text() + "\n"
+        # Store a dictionary with the page number (1-indexed for humans) and text
+        pages.append({
+            "page": page_num + 1,
+            "text": page.get_text()
+        })
+        
     doc.close()
-    return full_text
-def chunk_text(text : str, chunk_size : int = 500, overlap : int = 50)-> list[str]:
-    #split text into chunks 
-    chunks = []
-    start = 0
-    text_length = len(text)
+    return pages
 
-    while start < text_length:
-        end = start + chunk_size
-        chunk = text[start : end]
-        chunks.append(chunk)
-        #move the start pointer for next chunk with overlap
-        start += chunk_size - overlap    
+def chunk_text(pages: list[dict], chunk_size: int = 500, overlap: int = 50) -> list[dict]:
+    """Splits text into chunks, keeping the page number attached."""
+    chunks = []
+    
+    for page_data in pages:
+        text = page_data["text"]
+        page_num = page_data["page"]
+        
+        start = 0
+        text_length = len(text)
+        
+        while start < text_length:
+            end = start + chunk_size
+            chunk_str = text[start:end]
+            
+            # We save the chunk as a dictionary so it carries its page number
+            chunks.append({
+                "text": chunk_str,
+                "page": page_num
+            })
+            
+            start += (chunk_size - overlap)
+            
     return chunks
