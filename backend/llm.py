@@ -39,3 +39,119 @@ def generate_answer(question: str, retrieved_chunks: list[dict]) -> str:
     )
     
     return response.text
+
+
+# ─────────────────────────────────────────────────────────────
+# TASK MODE PROMPTS
+#
+# Notice what changes between each function:
+#   - The SAME client.models.generate_content() call
+#   - The SAME Gemini model
+#   - Just a different PROMPT string
+#
+# That's the entire secret of "Prompt Engineering".
+# The LLM is a text-in, text-out machine.
+# You control what it does entirely through the prompt.
+# ─────────────────────────────────────────────────────────────
+
+def generate_summary(chunks: list[str]) -> str:
+    """
+    Takes a list of raw text chunks from a document and asks Gemini
+    to produce a structured executive summary.
+    No JSON needed here — just clean human-readable text.
+    """
+    # Join all chunks into one big string separated by newlines
+    context_text = "\n\n".join(chunks)
+
+    prompt = f"""You are an expert document analyst for DocMind Workbench.
+    
+    Read the following document content and produce:
+    1. A 3-sentence executive summary.
+    2. A bulleted list of the 5 most important key topics.
+    3. One "Key Takeaway" sentence the user should remember.
+    
+    Document Content:
+    {context_text}
+    """
+
+    response = client.models.generate_content(
+        model='gemini-2.5-flash',
+        contents=prompt,
+    )
+    return response.text
+
+
+def generate_quiz(chunks: list[str]) -> str:
+    """
+    Takes document chunks and asks Gemini to produce a structured MCQ quiz.
+    
+    IMPORTANT: We tell Gemini to output RAW JSON only.
+    This is critical for the frontend — it can parse JSON and render
+    interactive buttons. It cannot parse a prose paragraph.
+    This is a key Prompt Engineering technique: specifying output FORMAT.
+    """
+    context_text = "\n\n".join(chunks)
+
+    prompt = f"""You are an expert professor building a quiz for DocMind Workbench.
+
+    Read the document and generate exactly 5 multiple-choice questions.
+    Base the questions ONLY on the provided document content.
+
+    Return your response as a raw JSON array ONLY.
+    Do NOT include any markdown formatting, code fences, or explanation text.
+    Just output the raw JSON.
+
+    The format must be exactly:
+    [
+      {{
+        "question": "The question text here?",
+        "options": ["Option A", "Option B", "Option C", "Option D"],
+        "answer": "Option A"
+      }}
+    ]
+
+    Document Content:
+    {context_text}
+    """
+
+    response = client.models.generate_content(
+        model='gemini-2.5-flash',
+        contents=prompt,
+    )
+    return response.text
+
+
+def generate_flashcards(chunks: list[str]) -> str:
+    """
+    Takes document chunks and asks Gemini to extract key terms and definitions
+    as flashcards, returned as a JSON array.
+    
+    Same pattern as generate_quiz — we force a structured JSON output
+    so the frontend can render flip-cards later.
+    """
+    context_text = "\n\n".join(chunks)
+
+    prompt = f"""You are a study assistant for DocMind Workbench.
+
+    Read the document and extract 8-10 important terms or concepts as flashcards.
+
+    Return your response as a raw JSON array ONLY.
+    Do NOT include any markdown, code fences, or extra text. Just raw JSON.
+
+    The format must be exactly:
+    [
+      {{
+        "term": "The technical term or concept",
+        "definition": "A clear, concise definition based on the document"
+      }}
+    ]
+
+    Document Content:
+    {context_text}
+    """
+
+    response = client.models.generate_content(
+        model='gemini-2.5-flash',
+        contents=prompt,
+    )
+    return response.text

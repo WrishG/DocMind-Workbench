@@ -157,3 +157,16 @@ def retrieve_and_rerank(query: str, top_k_initial: int = 15, top_k_final: int = 
     initial_results.sort(key=lambda x: x["rerank_score"], reverse=True)
     return initial_results[:top_k_final]
 
+def get_chunks_for_file(filename: str, max_chunks: int = 10) -> list[str]:
+    """
+    Bypasses vector search entirely.
+    Instead of searching by MEANING, we filter by METADATA.
+    We just ask ChromaDB: 'give me everything where source == filename'.
+    This is used by Task Modes (summarize, quiz, flashcards).
+    """
+    results = collection.get(
+        where={"source": filename}  # metadata filter
+    )
+    documents = results.get("documents", [])
+    # Limit to max_chunks to avoid sending a 500-page book to Gemini
+    return documents[:max_chunks]
