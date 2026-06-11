@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual Environments
+venv/
+backend/venv/
+
+# App Data (We don't want to upload user PDFs or massive databases!)
+uploads/
+backend/uploads/
+chroma_data/
+backend/chroma_data/
+
+# IDE and OS Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
