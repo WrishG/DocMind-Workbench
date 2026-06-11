@@ -1,7 +1,8 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from utils import extract_text_from_pdf, chunk_text
-from vector_store import add_chunks_to_db,search_db
+from vector_store import add_chunks_to_db, search_db, retrieve_and_rerank
+
 from llm import generate_answer
 import shutil
 import os
@@ -56,23 +57,20 @@ async def upload_pdf(file : UploadFile = File(...)):
 #using LLM and vector store
 
 @app.post("/ask")
-def ask_question(payload : dict):
-    #extract qns from the incoming json payload
-    question = payload.get("question","")
+def ask_question(payload: dict):
+    question = payload.get("question", "")
 
     if not question:
-        return {"error" : "Question is required"}
+        return {"error": "Question is required"}
     
-    #get the model response
-    retrieved_docs=search_db(question,n_results=3)
+    # ---> NEW: Advanced Retrieval Pipeline! <---
+    # We fetch 15 chunks, and precisely rerank them down to the top 4.
+    retrieved_docs = retrieve_and_rerank(query=question, top_k_initial=15, top_k_final=4)
 
     final_answer = generate_answer(question=question, retrieved_chunks=retrieved_docs)
     
-    return{
-        "Question ": question,
-        "Answer " : final_answer,
-        "Sources" : [f"{chunk['source']} (Page {chunk.get('page', 'Unknown')})" for chunk in retrieved_docs]
-
+    return {
+        "Question": question,
+        "Answer": final_answer,
+        "Sources": [f"{chunk['source']} (Page {chunk.get('page', 'Unknown')}) - Score: {chunk['rerank_score']:.2f}" for chunk in retrieved_docs]
     }
-    
-    

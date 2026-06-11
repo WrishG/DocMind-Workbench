@@ -1,5 +1,12 @@
 import chromadb
 from chromadb.utils import embedding_functions
+from sentence_transformers import CrossEncoder
+
+# Add this near the top where you initialized your other embedding model
+# This is our Reranker. It scores how relevant a chunk is to a question.
+reranker_model = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+
+
 
 # 1. Initialize the local database folder
 # This creates a SQLite-like folder structure on your hard drive to save the vectors permanently
@@ -66,4 +73,31 @@ def search_db(query: str, n_results: int = 5):
         })
         
     return retrieved_chunks
+def retrieve_and_rerank(query: str, top_k_initial: int = 15, top_k_final: int = 4):
+    """
+    1. Fetches a wide net of chunks from ChromaDB.
+    2. Uses a neural network to carefully score them.
+    3. Returns the absolute best chunks.
+    """
+    # Step 1: Get a wide net of results from ChromaDB
+    initial_results = search_db(query, n_results=top_k_initial)
+    
+    if not initial_results:
+        return []
+        
+    # Step 2: Prepare the pairs for the Cross-Encoder
+    # The model expects a list of pairs: [[query, text1], [query, text2], ...]
+    pairs = [[query, chunk["text"]] for chunk in initial_results]
+    
+    # Step 3: Get the strict relevance scores
+    scores = reranker_model.predict(pairs)
+    
+    # Step 4: Attach the scores to our chunks and sort them highest to lowest
+    for chunk, score in zip(initial_results, scores):
+        chunk["rerank_score"] = float(score)
+        
+    initial_results.sort(key=lambda x: x["rerank_score"], reverse=True)
+    
+    # Step 5: Return only the absolute best matches
+    return initial_results[:top_k_final]
 
