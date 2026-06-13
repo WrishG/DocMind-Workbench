@@ -1,6 +1,5 @@
 #mymupdf
 import fitz
-import fitz
 
 def extract_text_from_pdf(file_path: str) -> list[dict]:
     """Extracts text page by page, preserving the page number."""

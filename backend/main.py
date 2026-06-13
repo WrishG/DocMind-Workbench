@@ -5,6 +5,8 @@ from vector_store import add_chunks_to_db, search_db, retrieve_and_rerank, get_c
 from llm import generate_answer, generate_summary, generate_quiz, generate_flashcards
 from database import documents_collection
 from models import DocumentMetadata
+from fastapi import BackgroundTasks
+from workflows.engine import process_trigger
 
 import json
 import shutil
@@ -31,7 +33,7 @@ os.makedirs(UPLOAD_DIR,exist_ok=True)
 
 #upload endpoint
 @app.post("/upload")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(background_tasks: BackgroundTasks,file: UploadFile = File(...)):
     if not file.filename.endswith(".pdf"):
         return {"error": "Only PDF files are allowed"}
 
@@ -54,8 +56,12 @@ async def upload_pdf(file: UploadFile = File(...)):
     # Insert it into the cloud! (We use 'await' because it's a network call)
     await documents_collection.insert_one(doc_record.model_dump(by_alias=True))
 
+    doc_dict = {"filename": file.filename, "id": doc_record.id}
+    
+    # Tell FastAPI: "As soon as you reply to the user, run this function silently."
+    background_tasks.add_task(process_trigger, "on_upload", doc_dict)
     return {
-        "message": "File uploaded, indexed, and saved to database!",
+        "message": "File uploaded. Automations running in background!",
         "document_id": doc_record.id,
         "filename": file.filename
     }
@@ -170,4 +176,27 @@ def ask_question(payload: dict):
         "Question": question,
         "Answer": final_answer,
         "Sources": [f"{chunk['source']} (Page {chunk.get('page', 'Unknown')}) - Score: {chunk['rerank_score']:.2f}" for chunk in retrieved_docs]
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# WORKFLOW AUTOMATION ENDPOINTS
+# ─────────────────────────────────────────────────────────────
+
+from models import WorkflowTemplate
+from database import db
+
+@app.post("/workflow/create")
+async def create_workflow(template: WorkflowTemplate):
+    """
+    Saves a new automation rule to the database.
+    Example: When a file is uploaded (trigger), if it contains "resume" (condition), 
+    generate a summary (action).
+    """
+    # Insert the workflow into MongoDB
+    await db.workflows.insert_one(template.model_dump(by_alias=True))
+    
+    return {
+        "message": f"Workflow '{template.name}' created successfully!",
+        "workflow_id": template.id
     }
