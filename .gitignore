@@ -1,20 +1,34 @@
-# Python
+# -----------------------------
+# FRONTEND (React / Vite / Node)
+# -----------------------------
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/*.local
+frontend/.env*
+
+# -----------------------------
+# BACKEND (FastAPI / Python)
+# -----------------------------
+# Environments
+backend/venv/
+backend/env/
+.venv/
+env/
+
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+*$py.class
 
-# Virtual Environments
-venv/
-backend/venv/
+# Environment Variables (CRITICAL: Protects your MongoDB password!)
+backend/.env
+.env
 
-# App Data (We don't want to upload user PDFs or massive databases!)
-uploads/
-backend/uploads/
-chroma_data/
+# Database & Uploads (Do not commit heavy vector math or user PDFs!)
 backend/chroma_data/
+backend/uploads/
 
-# IDE and OS Files
-.vscode/
-.idea/
+# OS Files
 .DS_Store
 Thumbs.db
-.env

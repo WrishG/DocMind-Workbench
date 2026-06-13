@@ -67,6 +67,19 @@ async def upload_pdf(background_tasks: BackgroundTasks,file: UploadFile = File(.
     }
 
     
+# Add this endpoint so React can fetch the document library
+@app.get("/documents")
+async def list_documents():
+    """Returns a list of all documents in the database."""
+    # We query MongoDB, sort by newest first, and convert to list
+    cursor = db.documents.find().sort("uploaded_at", -1)
+    documents = await cursor.to_list(length=100)
+    
+    # Clean up the MongoDB ObjectId format for JSON
+    for doc in documents:
+        doc["_id"] = str(doc["_id"])
+        
+    return documents
 
 
 #ask question endpint 
