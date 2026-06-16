@@ -41,7 +41,6 @@ async def process_trigger(trigger_name: str, document_metadata: dict):
             final_output[action.type] = result
             
         # STEP 5: Logging
-        # Never run a background task without saving a log, or the user won't know it finished.
         log = WorkflowLog(
             workflow_id=workflow.id,
             document_id=doc_id,
@@ -49,4 +48,19 @@ async def process_trigger(trigger_name: str, document_metadata: dict):
             output=final_output
         )
         await db.workflow_logs.insert_one(log.model_dump(by_alias=True))
+        # ---> NEW: Save to Cache <---
+        # Map automation action names to our cache keys
+        cache_updates = {}
+        if "run_summary" in final_output:
+            cache_updates["tasks.summarize"] = final_output["run_summary"]
+        if "run_quiz" in final_output:
+            cache_updates["tasks.quiz"] = final_output["run_quiz"]
+            
+        if cache_updates:
+            await db.documents.update_one(
+                {"_id": doc_id},
+                {"$set": cache_updates}
+            )
+            print(f"⚡ Saved background automation results to Document Cache!")
+
         print(f"✅ Automation '{workflow.name}' completed and saved to DB!")

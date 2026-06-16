@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from utils import extract_text_from_pdf, chunk_text
 from vector_store import add_chunks_to_db, search_db, retrieve_and_rerank, get_chunks_for_file
 from llm import generate_answer, generate_summary, generate_quiz, generate_flashcards
-from database import documents_collection
+from database import documents_collection, db
 from models import DocumentMetadata
 from fastapi import BackgroundTasks
 from workflows.engine import process_trigger
@@ -94,66 +94,84 @@ async def list_documents():
 # ─────────────────────────────────────────────────────────────
 
 @app.post("/summarize")
-def summarize_document(payload: dict):
-    """
-    Input:  { "filename": "your_file.pdf" }
-    Output: { "filename": "...", "summary": "..." }
-    """
+async def summarize_document(payload: dict):
     filename = payload.get("filename", "")
-    if not filename:
-        return {"error": "filename is required"}
+    document_id = payload.get("document_id", "")
+    
+    if not filename or not document_id:
+        return {"error": "filename and document_id are required"}
 
-    # 1. Fetch the first 10 chunks of this file directly from ChromaDB
-    #    (no vector search needed — we just want the document's content)
+    # --- CACHE CHECK ---
+    doc = await db.documents.find_one({"_id": document_id})
+    if doc and "tasks" in doc and "summarize" in doc["tasks"]:
+        print("⚡ CACHE HIT! Returning summary from MongoDB!")
+        return {"filename": filename, "summary": doc["tasks"]["summarize"]}
+
+    print("🐌 CACHE MISS! Generating new summary...")
     chunks = get_chunks_for_file(filename, max_chunks=10)
     if not chunks:
         return {"error": f"No data found for '{filename}'. Did you upload it?"}
 
-    # 2. Call the summarize prompt in llm.py
     summary = generate_summary(chunks)
+    
+    # --- SAVE TO CACHE ---
+    await db.documents.update_one(
+        {"_id": document_id},
+        {"$set": {"tasks.summarize": summary}}
+    )
+
     return {"filename": filename, "summary": summary}
 
 
 @app.post("/quiz")
-def create_quiz(payload: dict):
-    """
-    Input:  { "filename": "your_file.pdf" }
-    Output: { "filename": "...", "quiz": [ {question, options, answer}, ... ] }
-    
-    We force Gemini to output raw JSON so the frontend can render
-    it as interactive buttons later.
-    """
+async def create_quiz(payload: dict):
     filename = payload.get("filename", "")
-    if not filename:
-        return {"error": "filename is required"}
+    document_id = payload.get("document_id", "")
+    
+    if not filename or not document_id:
+        return {"error": "filename and document_id are required"}
 
+    # --- CACHE CHECK ---
+    doc = await db.documents.find_one({"_id": document_id})
+    if doc and "tasks" in doc and "quiz" in doc["tasks"]:
+        print("⚡ CACHE HIT! Returning quiz from MongoDB!")
+        return {"filename": filename, "quiz": doc["tasks"]["quiz"]}
+
+    print("🐌 CACHE MISS! Generating new quiz...")
     chunks = get_chunks_for_file(filename, max_chunks=10)
     if not chunks:
         return {"error": f"No data found for '{filename}'."}
 
     raw_json = generate_quiz(chunks)
-
-    # Gemini sometimes wraps JSON in ```json ``` markdown — strip it
     raw_json = raw_json.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
 
     try:
         quiz_data = json.loads(raw_json)
+        # --- SAVE TO CACHE ---
+        await db.documents.update_one(
+            {"_id": document_id},
+            {"$set": {"tasks.quiz": quiz_data}}
+        )
         return {"filename": filename, "quiz": quiz_data}
     except Exception:
-        # Fallback: return the raw text if JSON parsing fails
         return {"filename": filename, "raw_text": raw_json}
 
 
 @app.post("/flashcards")
-def create_flashcards(payload: dict):
-    """
-    Input:  { "filename": "your_file.pdf" }
-    Output: { "filename": "...", "flashcards": [ {term, definition}, ... ] }
-    """
+async def create_flashcards(payload: dict):
     filename = payload.get("filename", "")
-    if not filename:
-        return {"error": "filename is required"}
+    document_id = payload.get("document_id", "")
+    
+    if not filename or not document_id:
+        return {"error": "filename and document_id are required"}
 
+    # --- CACHE CHECK ---
+    doc = await db.documents.find_one({"_id": document_id})
+    if doc and "tasks" in doc and "flashcards" in doc["tasks"]:
+        print("⚡ CACHE HIT! Returning flashcards from MongoDB!")
+        return {"filename": filename, "flashcards": doc["tasks"]["flashcards"]}
+
+    print("🐌 CACHE MISS! Generating new flashcards...")
     chunks = get_chunks_for_file(filename, max_chunks=10)
     if not chunks:
         return {"error": f"No data found for '{filename}'."}
@@ -163,6 +181,11 @@ def create_flashcards(payload: dict):
 
     try:
         flashcard_data = json.loads(raw_json)
+        # --- SAVE TO CACHE ---
+        await db.documents.update_one(
+            {"_id": document_id},
+            {"$set": {"tasks.flashcards": flashcard_data}}
+        )
         return {"filename": filename, "flashcards": flashcard_data}
     except Exception:
         return {"filename": filename, "raw_text": raw_json}
