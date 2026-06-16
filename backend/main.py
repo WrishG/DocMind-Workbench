@@ -44,8 +44,8 @@ async def upload_pdf(background_tasks: BackgroundTasks,file: UploadFile = File(.
     pages = extract_text_from_pdf(file_path)
     chunks = chunk_text(pages, chunk_size=500, overlap=50)
     
-    # 1. AI Layer: Save math to ChromaDB
-    add_chunks_to_db(file.filename, chunks)
+    # 1. AI Layer: Save math to MongoDB
+    await add_chunks_to_db(file.filename, chunks)
 
     # 2. FSD Layer: Save metadata to MongoDB
     doc_record = DocumentMetadata(
@@ -81,6 +81,30 @@ async def list_documents():
         
     return documents
 
+@app.delete("/documents/{document_id}")
+async def delete_document(document_id: str):
+    """Permanently deletes a document, its vector chunks, and its file."""
+    # 1. Get the document first so we know the filename
+    doc = await db.documents.find_one({"_id": document_id})
+    if not doc:
+        return {"error": "Document not found"}
+
+    filename = doc.get("filename")
+
+    # 2. Delete from MongoDB Collections
+    await db.documents.delete_one({"_id": document_id})
+    await db.workflow_logs.delete_many({"document_id": document_id})
+    if filename:
+        await db.chunks.delete_many({"source": filename})
+
+    # 3. Delete the local PDF file
+    if filename:
+        file_path = os.path.join(UPLOAD_DIR, filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+    return {"message": "Document and all associated data deleted successfully."}
+
 
 #ask question endpint 
 #this will take the question from the frontend and return the answer
@@ -108,7 +132,7 @@ async def summarize_document(payload: dict):
         return {"filename": filename, "summary": doc["tasks"]["summarize"]}
 
     print("🐌 CACHE MISS! Generating new summary...")
-    chunks = get_chunks_for_file(filename, max_chunks=10)
+    chunks = await get_chunks_for_file(filename, max_chunks=10)
     if not chunks:
         return {"error": f"No data found for '{filename}'. Did you upload it?"}
 
@@ -138,7 +162,7 @@ async def create_quiz(payload: dict):
         return {"filename": filename, "quiz": doc["tasks"]["quiz"]}
 
     print("🐌 CACHE MISS! Generating new quiz...")
-    chunks = get_chunks_for_file(filename, max_chunks=10)
+    chunks = await get_chunks_for_file(filename, max_chunks=10)
     if not chunks:
         return {"error": f"No data found for '{filename}'."}
 
@@ -172,7 +196,7 @@ async def create_flashcards(payload: dict):
         return {"filename": filename, "flashcards": doc["tasks"]["flashcards"]}
 
     print("🐌 CACHE MISS! Generating new flashcards...")
-    chunks = get_chunks_for_file(filename, max_chunks=10)
+    chunks = await get_chunks_for_file(filename, max_chunks=10)
     if not chunks:
         return {"error": f"No data found for '{filename}'."}
 
@@ -196,23 +220,48 @@ async def create_flashcards(payload: dict):
 # ─────────────────────────────────────────────────────────────
 
 @app.post("/ask")
-def ask_question(payload: dict):
+async def ask_question(payload: dict):
     question = payload.get("question", "")
+    document_id = payload.get("document_id", "")
 
     if not question:
         return {"error": "Question is required"}
+    if not document_id:
+        return {"error": "document_id is required"}
     
-    # ---> NEW: Advanced Retrieval Pipeline! <---
-    # We fetch 15 chunks, and precisely rerank them down to the top 4.
-    retrieved_docs = retrieve_and_rerank(query=question, top_k_initial=15, top_k_final=4)
+    # 1. Advanced Retrieval Pipeline (MongoDB Vector Search)
+    retrieved_docs = await retrieve_and_rerank(query=question, top_k_initial=15, top_k_final=4)
 
+    # 2. Generate Answer
     final_answer = generate_answer(question=question, retrieved_chunks=retrieved_docs)
+    sources = [f"{chunk['source']} (Page {chunk.get('page', 'Unknown')}) - Score: {chunk['rerank_score']:.2f}" for chunk in retrieved_docs]
+    
+    # 3. SAVE TO CHAT HISTORY IN MONGODB
+    await db.documents.update_one(
+        {"_id": document_id},
+        {"$push": {
+            "chat_history": {
+                "$each": [
+                    {"role": "user", "content": question},
+                    {"role": "assistant", "type": "chat", "content": final_answer, "sources": sources}
+                ]
+            }
+        }}
+    )
     
     return {
         "Question": question,
         "Answer": final_answer,
-        "Sources": [f"{chunk['source']} (Page {chunk.get('page', 'Unknown')}) - Score: {chunk['rerank_score']:.2f}" for chunk in retrieved_docs]
+        "Sources": sources
     }
+
+@app.get("/history/{document_id}")
+async def get_chat_history(document_id: str):
+    """Fetches past chat history for a specific document."""
+    doc = await db.documents.find_one({"_id": document_id}, {"chat_history": 1})
+    if doc and "chat_history" in doc:
+        return doc["chat_history"]
+    return []
 
 
 # ─────────────────────────────────────────────────────────────

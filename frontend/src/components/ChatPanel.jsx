@@ -18,7 +18,8 @@ export default function ChatPanel() {
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
-  const messages = getMessages();
+  const chatHistories = useStore((state) => state.chatHistories);
+  const messages = chatHistories[activeDocument?._id] || [];
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -26,6 +27,20 @@ export default function ChatPanel() {
 
   useEffect(() => {
     inputRef.current?.focus();
+
+    // Fetch persistent chat history for the active document
+    if (activeDocument) {
+      const fetchHistory = async () => {
+        try {
+          const res = await apiClient.get(`/history/${activeDocument._id}`);
+          // If the store doesn't already have messages (or we want to sync), set them
+          useStore.getState().setChatHistory(activeDocument._id, res.data);
+        } catch (err) {
+          console.error("Failed to fetch chat history", err);
+        }
+      };
+      fetchHistory();
+    }
   }, [activeDocument]);
 
   // Handle sending a message or triggering a task
@@ -43,7 +58,20 @@ export default function ChatPanel() {
       setIsLoading(true);
 
       try {
-        const res = await apiClient.post('/ask', { question });
+        const res = await apiClient.post('/ask', { 
+          question: question,
+          document_id: activeDocument._id
+        });
+        
+        if (res.data.error) {
+          addMessage({
+            role: 'assistant',
+            type: 'error',
+            content: res.data.error,
+          });
+          setIsLoading(false);
+          return;
+        }
         addMessage({
           role: 'assistant',
           type: 'chat',

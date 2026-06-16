@@ -1,5 +1,17 @@
 import { useState } from 'react';
 
+const downloadFile = (content, filename, contentType) => {
+  const blob = new Blob([content], { type: contentType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 // ── Color palettes for cards ──
 const CARD_COLORS = [
   { bg: 'bg-indigo-50 dark:bg-indigo-950/30', border: 'border-indigo-200 dark:border-indigo-800/50', glow: 'hover:shadow-indigo-200/50 dark:hover:shadow-indigo-500/20', accent: 'text-indigo-600 dark:text-indigo-400', ring: 'ring-indigo-400/30' },
@@ -32,13 +44,21 @@ export function SummaryCard({ data }) {
 
   return (
     <div className="animate-slide-up space-y-3">
-      <div className="flex items-center space-x-2">
-        <div className="w-6 h-6 rounded-md bg-brand-100 dark:bg-brand-900/40 flex items-center justify-center">
-          <span className="text-xs">📝</span>
+      <div className="flex items-center justify-between space-x-2">
+        <div className="flex items-center space-x-2">
+          <div className="w-6 h-6 rounded-md bg-brand-100 dark:bg-brand-900/40 flex items-center justify-center">
+            <span className="text-xs">📝</span>
+          </div>
+          <span className="text-xs font-bold uppercase tracking-widest text-brand-500 dark:text-brand-400">
+            Summary
+          </span>
         </div>
-        <span className="text-xs font-bold uppercase tracking-widest text-brand-500 dark:text-brand-400">
-          Summary
-        </span>
+        <button
+          onClick={() => downloadFile(data, 'summary.txt', 'text/plain')}
+          className="text-xs font-medium px-2.5 py-1 rounded-md bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-700 transition-colors"
+        >
+          ⬇️ Export
+        </button>
       </div>
 
       <div className="space-y-2">
@@ -113,13 +133,21 @@ export function QuizCard({ data }) {
 
   return (
     <div className="animate-slide-up space-y-4">
-      <div className="flex items-center space-x-2">
-        <div className="w-6 h-6 rounded-md bg-brand-100 dark:bg-brand-900/40 flex items-center justify-center">
-          <span className="text-xs">🎓</span>
+      <div className="flex items-center justify-between space-x-2">
+        <div className="flex items-center space-x-2">
+          <div className="w-6 h-6 rounded-md bg-brand-100 dark:bg-brand-900/40 flex items-center justify-center">
+            <span className="text-xs">🎓</span>
+          </div>
+          <span className="text-xs font-bold uppercase tracking-widest text-brand-500 dark:text-brand-400">
+            Quiz · {questions.length} questions
+          </span>
         </div>
-        <span className="text-xs font-bold uppercase tracking-widest text-brand-500 dark:text-brand-400">
-          Quiz · {questions.length} questions
-        </span>
+        <button
+          onClick={() => downloadFile(JSON.stringify(questions, null, 2), 'quiz.json', 'application/json')}
+          className="text-xs font-medium px-2.5 py-1 rounded-md bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-700 transition-colors"
+        >
+          ⬇️ Export
+        </button>
       </div>
 
       {questions.map((q, qIdx) => {
@@ -199,13 +227,21 @@ export function FlashcardsCard({ data }) {
 
   return (
     <div className="animate-slide-up space-y-4">
-      <div className="flex items-center space-x-2">
-        <div className="w-6 h-6 rounded-md bg-brand-100 dark:bg-brand-900/40 flex items-center justify-center">
-          <span className="text-xs">🃏</span>
+      <div className="flex items-center justify-between space-x-2">
+        <div className="flex items-center space-x-2">
+          <div className="w-6 h-6 rounded-md bg-brand-100 dark:bg-brand-900/40 flex items-center justify-center">
+            <span className="text-xs">🃏</span>
+          </div>
+          <span className="text-xs font-bold uppercase tracking-widest text-brand-500 dark:text-brand-400">
+            Flashcards · {cards.length} cards
+          </span>
         </div>
-        <span className="text-xs font-bold uppercase tracking-widest text-brand-500 dark:text-brand-400">
-          Flashcards · {cards.length} cards
-        </span>
+        <button
+          onClick={() => downloadFile(JSON.stringify(cards, null, 2), 'flashcards.json', 'application/json')}
+          className="text-xs font-medium px-2.5 py-1 rounded-md bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-700 transition-colors"
+        >
+          ⬇️ Export
+        </button>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

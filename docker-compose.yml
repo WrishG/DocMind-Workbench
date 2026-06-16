@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  # ─────────────────────────────────────────────
+  # FRONTEND (React + Vite + Nginx)
+  # ─────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - docmind-network
+
+  # ─────────────────────────────────────────────
+  # BACKEND (FastAPI + Python)
+  # ─────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      # Automatically pass the Gemini API key from your host environment
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - MONGODB_URI=mongodb://mongodb:27017
+    depends_on:
+      - mongodb
+    volumes:
+      # Optional: You can mount local directories if needed, but Vector Store is now in Atlas!
+      - ./backend:/app
+    restart: unless-stopped
+    networks:
+      - docmind-network
+
+  # ─────────────────────────────────────────────
+  # DATABASE (MongoDB)
+  # ─────────────────────────────────────────────
+  mongodb:
+    image: mongo:6.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+    networks:
+      - docmind-network
+
+# Define persistent storage volumes so data survives container restarts
+volumes:
+  mongodb_data:
+
+# Define the internal network the containers use to talk to each other
+networks:
+  docmind-network:
+    driver: bridge

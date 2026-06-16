@@ -37,7 +37,7 @@ async def process_trigger(trigger_name: str, document_metadata: dict):
             print(f"⚙️ Automation Engine: Running '{action.type}' for {filename}")
             
             # Call our switchboard file
-            result = execute_action(action.type, filename)
+            result = await execute_action(action.type, filename)
             final_output[action.type] = result
             
         # STEP 5: Logging

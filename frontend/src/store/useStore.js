@@ -45,4 +45,12 @@ export const useStore = create((set, get) => ({
       },
     };
   }),
+
+  // Set the entire history for a specific document
+  setChatHistory: (docId, messages) => set((state) => ({
+    chatHistories: {
+      ...state.chatHistories,
+      [docId]: messages,
+    },
+  })),
 }));
