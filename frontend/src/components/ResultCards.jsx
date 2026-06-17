@@ -286,3 +286,99 @@ export function FlashcardsCard({ data }) {
     </div>
   );
 }
+
+// ─────────────────────────────────────────────
+// SCORE MATCH CARD
+// ─────────────────────────────────────────────
+export function ScoreMatchCard({ data }) {
+  if (!data || typeof data !== 'object') return null;
+
+  return (
+    <div className="animate-slide-up space-y-3 mt-4">
+      <div className="flex items-center space-x-2 mb-2">
+        <div className="w-6 h-6 rounded-md bg-brand-100 dark:bg-brand-900/40 flex items-center justify-center">
+          <span className="text-xs">📊</span>
+        </div>
+        <h4 className="text-sm font-bold text-surface-800 dark:text-surface-200">AI Score Match</h4>
+      </div>
+      <div className="bg-surface-50 dark:bg-surface-800/50 rounded-xl p-4 border border-surface-200 dark:border-surface-700/50">
+        <div className="flex items-center gap-4 mb-3">
+          <div className="flex-shrink-0 w-16 h-16 rounded-full flex items-center justify-center bg-white dark:bg-surface-900 shadow-sm border border-surface-200 dark:border-surface-700">
+            <span className={`text-xl font-bold ${data.score >= 80 ? 'text-emerald-500' : data.score >= 60 ? 'text-amber-500' : 'text-rose-500'}`}>
+              {data.score}
+            </span>
+          </div>
+          <div className="flex-1">
+            <p className="text-sm text-surface-600 dark:text-surface-300 leading-relaxed">
+              {data.explanation}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// EXTRACT SKILLS CARD
+// ─────────────────────────────────────────────
+export function ExtractSkillsCard({ data }) {
+  if (!data || !Array.isArray(data)) return null;
+
+  return (
+    <div className="animate-slide-up space-y-3 mt-4">
+      <div className="flex items-center space-x-2 mb-2">
+        <div className="w-6 h-6 rounded-md bg-brand-100 dark:bg-brand-900/40 flex items-center justify-center">
+          <span className="text-xs">🎯</span>
+        </div>
+        <h4 className="text-sm font-bold text-surface-800 dark:text-surface-200">Extracted Skills</h4>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {data.map((skill, idx) => (
+          <span key={idx} className="px-3 py-1.5 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300 rounded-lg text-sm font-medium border border-brand-100 dark:border-brand-800/30">
+            {skill}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// EXTRACT CLAIMS CARD
+// ─────────────────────────────────────────────
+export function ExtractClaimsCard({ data }) {
+  if (!data || typeof data !== 'object') return null;
+
+  return (
+    <div className="animate-slide-up space-y-3 mt-4">
+      <div className="flex items-center space-x-2 mb-2">
+        <div className="w-6 h-6 rounded-md bg-brand-100 dark:bg-brand-900/40 flex items-center justify-center">
+          <span className="text-xs">🔬</span>
+        </div>
+        <h4 className="text-sm font-bold text-surface-800 dark:text-surface-200">Paper Claims & Limitations</h4>
+      </div>
+      <div className="space-y-4">
+        {data.claims && data.claims.length > 0 && (
+          <div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-xl p-4 border border-emerald-100 dark:border-emerald-900/30">
+            <h5 className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 mb-2">Main Claims</h5>
+            <ul className="space-y-2">
+              {data.claims.map((claim, idx) => (
+                <li key={idx} className="flex gap-2 text-sm text-surface-700 dark:text-surface-300">
+                  <span className="text-emerald-500 mt-0.5">•</span>
+                  <span>{claim}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {data.limitation && (
+          <div className="bg-rose-50 dark:bg-rose-950/20 rounded-xl p-4 border border-rose-100 dark:border-rose-900/30">
+            <h5 className="text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400 mb-2">Core Limitation</h5>
+            <p className="text-sm text-surface-700 dark:text-surface-300">{data.limitation}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

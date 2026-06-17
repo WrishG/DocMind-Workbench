@@ -1,14 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { apiClient } from '../api/client';
 import { useStore } from '../store/useStore';
-import { SummaryCard, QuizCard, FlashcardsCard } from './ResultCards';
+import { SummaryCard, QuizCard, FlashcardsCard, ScoreMatchCard, ExtractSkillsCard, ExtractClaimsCard } from './ResultCards';
 
-const MODES = [
-  { id: 'chat',       label: 'Chat',       icon: '💬', description: 'Ask questions' },
-  { id: 'summarize',  label: 'Summarize',  icon: '📝', description: 'Key insights' },
-  { id: 'quiz',       label: 'Quiz',       icon: '🎓', description: 'Test knowledge' },
-  { id: 'flashcards', label: 'Flashcards', icon: '🃏', description: 'Study cards' },
-];
+// We will dynamically build MODES inside the component based on activeDocument
 
 export default function ChatPanel() {
   const { activeDocument, getMessages, addMessage } = useStore();
@@ -20,6 +15,32 @@ export default function ChatPanel() {
 
   const chatHistories = useStore((state) => state.chatHistories);
   const messages = chatHistories[activeDocument?._id] || [];
+
+  // Dynamic Modes based on AI Classification
+  const docType = activeDocument?.document_type;
+  
+  // ALWAYS include the base modes to prevent UI crashes and support all documents
+  let currentModes = [
+    { id: 'chat',       label: 'Chat',       icon: '💬', description: 'Ask questions' },
+    { id: 'summarize',  label: 'Summarize',  icon: '📝', description: 'Key insights' },
+    { id: 'quiz',       label: 'Quiz',       icon: '🎓', description: 'Test knowledge' },
+    { id: 'flashcards', label: 'Flashcards', icon: '🃏', description: 'Study cards' },
+  ];
+
+  // Append specialized extra options based on document type
+  if (docType === 'Resume') {
+    currentModes.push({ id: 'extract_skills', label: 'Extract Skills', icon: '🎯' });
+    currentModes.push({ id: 'score_resume', label: 'Score Match', icon: '📊' });
+  } else if (docType === 'Academic Paper') {
+    currentModes.push({ id: 'extract_claims', label: 'Extract Claims', icon: '🔬' });
+  }
+
+  // Ensure active mode is valid
+  useEffect(() => {
+    if (!currentModes.find(m => m.id === activeMode)) {
+      setActiveMode('chat');
+    }
+  }, [docType, activeMode]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -89,19 +110,39 @@ export default function ChatPanel() {
       }
     } else {
       // Task mode: no user input needed, just trigger the AI
-      const modeLabel = MODES.find((m) => m.id === activeMode)?.label || activeMode;
+      const modeLabel = currentModes.find((m) => m.id === activeMode)?.label || activeMode;
       addMessage({ role: 'user', content: `Generate ${modeLabel} for ${filename}` });
       setIsLoading(true);
 
       try {
-        const res = await apiClient.post(`/${activeMode}`, { 
+        const url = ['extract_skills', 'score_resume', 'extract_claims'].includes(activeMode)
+          ? `/task/${activeMode}`
+          : `/${activeMode}`;
+          
+        const res = await apiClient.post(url, { 
           filename: filename,
           document_id: activeDocument._id 
         });
+        let messageData = res.data;
+        
+        // Specialized tasks return raw stringified JSON in a `data` field.
+        // We must parse it and shape it to match the historical DB format so the UI renders it immediately.
+        if (['extract_skills', 'score_resume', 'extract_claims'].includes(activeMode)) {
+          if (res.data.error) throw new Error(res.data.error);
+          try {
+            // Clean markdown backticks in case Gemini hallucinates them
+            const cleanStr = res.data.data.replace(/```json/g, '').replace(/```/g, '').trim();
+            messageData = { [activeMode]: JSON.parse(cleanStr) };
+          } catch (e) {
+            console.error("Failed to parse AI JSON:", e);
+            messageData = { raw_text: res.data.data };
+          }
+        }
+
         addMessage({
           role: 'assistant',
           type: activeMode,
-          data: res.data,
+          data: messageData,
         });
       } catch (err) {
         const is503 = err?.response?.status === 503;
@@ -153,14 +194,45 @@ export default function ChatPanel() {
               </p>
               {msg.sources?.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-surface-100 dark:border-surface-700/50">
-                  <p className="text-[10px] font-bold text-surface-400 dark:text-surface-500 uppercase tracking-widest mb-1.5">
-                    Sources
+                  <p className="text-[10px] font-bold text-surface-400 dark:text-surface-500 uppercase tracking-widest mb-2">
+                    Sources Used
                   </p>
-                  {msg.sources.map((src, i) => (
-                    <p key={i} className="text-xs text-surface-500 dark:text-surface-400 leading-relaxed">
-                      <span className="text-brand-400 mr-1">›</span>{src}
-                    </p>
-                  ))}
+                  <div className="flex flex-col gap-2">
+                    {msg.sources.map((src, i) => {
+                      if (typeof src === 'string') {
+                        // Legacy string format
+                        return (
+                          <div key={i} className="text-xs text-surface-500 dark:text-surface-400 bg-surface-50 dark:bg-surface-800/50 px-3 py-2 rounded-lg">
+                            <span className="text-brand-400 mr-1">›</span>{src}
+                          </div>
+                        );
+                      }
+                      
+                      // New object format with interactive drawer
+                      return (
+                        <details key={i} className="group bg-surface-50 dark:bg-surface-800/50 rounded-lg overflow-hidden border border-surface-200/50 dark:border-surface-700/50">
+                          <summary className="flex items-center justify-between text-xs text-surface-600 dark:text-surface-300 px-3 py-2 cursor-pointer hover:bg-surface-100 dark:hover:bg-surface-700/50 transition-colors list-none">
+                            <div className="flex items-center gap-2 truncate">
+                              <span className="text-brand-500 font-medium">›</span>
+                              <span className="truncate font-medium">{src.source}</span>
+                              <span className="text-surface-400">| Page {src.page}</span>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400 font-medium">
+                                {Math.min(99, Math.max(80, Math.round((1 - src.score) * 100)))}% Match
+                              </span>
+                              <svg className="w-4 h-4 text-surface-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </div>
+                          </summary>
+                          <div className="px-3 py-2 text-xs text-surface-500 dark:text-surface-400 border-t border-surface-200/50 dark:border-surface-700/50 leading-relaxed max-h-40 overflow-y-auto whitespace-pre-wrap">
+                            "{src.text}"
+                          </div>
+                        </details>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </>
@@ -175,12 +247,26 @@ export default function ChatPanel() {
           {/* Flashcards result */}
           {msg.type === 'flashcards' && <FlashcardsCard data={msg.data?.flashcards} />}
 
-          {/* Raw text fallback */}
-          {msg.type === 'summarize' && !msg.data?.summary && msg.data?.raw_text && (
-            <pre className="text-sm text-surface-700 dark:text-surface-300 whitespace-pre-wrap">{msg.data.raw_text}</pre>
-          )}
-          {(msg.type === 'quiz' || msg.type === 'flashcards') && !msg.data?.quiz && !msg.data?.flashcards && msg.data?.raw_text && (
-            <pre className="text-sm text-surface-700 dark:text-surface-300 whitespace-pre-wrap">{msg.data.raw_text}</pre>
+          {/* Specialized results */}
+          {msg.type === 'score_resume' && <ScoreMatchCard data={msg.data?.score_resume} />}
+          {msg.type === 'extract_skills' && <ExtractSkillsCard data={msg.data?.extract_skills} />}
+          {msg.type === 'extract_claims' && <ExtractClaimsCard data={msg.data?.extract_claims} />}
+
+          {/* Raw text fallback for all tasks */}
+          {msg.type !== 'chat' && msg.type !== 'error' && (
+            <div className="mt-2 space-y-3">
+              {msg.data?.raw_text && (
+                <pre className="text-sm text-surface-700 dark:text-surface-300 whitespace-pre-wrap font-sans">
+                  {msg.data.raw_text}
+                </pre>
+              )}
+              {/* If it's a JSON object but we don't have a specific card, render it cleanly */}
+              {msg.data && typeof msg.data === 'object' && !msg.data.raw_text && !msg.data.summary && !msg.data.quiz && !msg.data.flashcards && !msg.data.score_resume && !msg.data.extract_skills && !msg.data.extract_claims && (
+                <pre className="text-sm text-surface-700 dark:text-surface-300 whitespace-pre-wrap bg-surface-100 dark:bg-surface-900 p-3 rounded-xl border border-surface-200 dark:border-surface-800">
+                  {JSON.stringify(msg.data, null, 2)}
+                </pre>
+              )}
+            </div>
           )}
           
           {/* Error fallback from backend tasks */}
@@ -257,7 +343,7 @@ export default function ChatPanel() {
       <div className="px-6 pb-5 pt-2">
         {/* Mode Pills */}
         <div className="flex items-center space-x-1.5 mb-3">
-          {MODES.map((mode) => (
+          {currentModes.map((mode) => (
             <button
               key={mode.id}
               onClick={() => setActiveMode(mode.id)}
@@ -290,7 +376,7 @@ export default function ChatPanel() {
             />
           ) : (
             <div className="flex-1 px-3 py-2 text-[15px] text-surface-400 dark:text-surface-500">
-              Press <kbd className="px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 text-xs font-mono border border-surface-200 dark:border-surface-600">Enter</kbd> to generate {MODES.find(m => m.id === activeMode)?.label.toLowerCase()} for <span className="text-brand-500 dark:text-brand-400 font-medium">{activeDocument?.filename}</span>
+              Press <kbd className="px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 text-xs font-mono border border-surface-200 dark:border-surface-600">Enter</kbd> to generate {currentModes.find(m => m.id === activeMode)?.label.toLowerCase()} for <span className="text-brand-500 dark:text-brand-400 font-medium">{activeDocument?.filename}</span>
             </div>
           )}
 

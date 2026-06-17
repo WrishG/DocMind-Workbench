@@ -90,6 +90,33 @@ def generate_embeddings(texts: list[str]) -> list[list[float]]:
 # You control what it does entirely through the prompt.
 # ─────────────────────────────────────────────────────────────
 
+def classify_document(chunks: list[str]) -> str:
+    """Classifies the document as Resume, Job Description, Academic Paper, or General Document."""
+    context_text = "\n\n".join(chunks[:3]) # Only need the first few chunks to classify
+
+    prompt = f"""You are an expert document classifier.
+    Read the beginning of this document and classify it into exactly ONE of the following categories:
+    - Resume
+    - Job Description
+    - Academic Paper
+    - General Document
+
+    Return ONLY the category name as a raw string. Do not explain.
+
+    Document Content:
+    {context_text}
+    """
+
+    response = client.models.generate_content(
+        model='gemini-flash-latest',
+        contents=prompt,
+    )
+    classification = response.text.strip()
+    valid_categories = ["Resume", "Academic Paper", "Job Description", "General Document"]
+    if classification in valid_categories:
+        return classification
+    return "General Document"
+
 def generate_summary(chunks: list[str]) -> str:
     """
     Takes a list of raw text chunks from a document and asks Gemini
@@ -191,3 +218,49 @@ def generate_flashcards(chunks: list[str]) -> str:
         contents=prompt,
     )
     return response.text
+
+# ─────────────────────────────────────────────────────────────
+# SPECIALIZED AI CHAINS (Phase 3)
+# ─────────────────────────────────────────────────────────────
+
+def extract_resume_skills(chunks: list[str]) -> str:
+    context_text = "\n\n".join(chunks)
+    prompt = f"""You are a Technical Recruiter for DocMind Workbench.
+    Extract the candidate's core skills and total years of experience from this resume.
+    Return a raw JSON array of strings containing their top skills, e.g. ["Python", "React"].
+    Do not include markdown or explanations.
+    
+    Resume:
+    {context_text}
+    """
+    response = client.models.generate_content(model='gemini-flash-latest', contents=prompt)
+    return response.text.strip()
+
+def score_resume_match(chunks: list[str]) -> str:
+    context_text = "\n\n".join(chunks)
+    prompt = f"""Skeptical Senior Engineering Manager.reting the studens resume for his wellbeing
+    First, read this candidate's resume and determine exactly what role they are applying for based on their experience and summary.
+    Then, score this candidate strictly out of 100 based on standard industry expectations for that specific role.
+    Do not be generous. Penalize for missing core fundamentals, vague impact, or lack of quantifiable metrics.
+    Provide a 2-sentence explanation for the score, explicitly mentioning the role you assumed they applied for.
+    Return a raw JSON object exactly like this: {{"score": 65, "explanation": "..."}}
+    Do not include markdown.
+    
+    Resume:
+    {context_text}
+    """
+    response = client.models.generate_content(model='gemini-flash-latest', contents=prompt)
+    return response.text.strip()
+
+def extract_paper_claims(chunks: list[str]) -> str:
+    context_text = "\n\n".join(chunks[:10]) # First few chunks usually contain abstract/intro/claims
+    prompt = f"""You are a peer reviewer.
+    Extract the 3 main claims and 1 core limitation from this academic paper.
+    Return a raw JSON object: {{"claims": ["...", "...", "..."], "limitation": "..."}}
+    Do not include markdown.
+    
+    Paper:
+    {context_text}
+    """
+    response = client.models.generate_content(model='gemini-flash-latest', contents=prompt)
+    return response.text.strip()

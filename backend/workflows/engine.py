@@ -10,6 +10,21 @@ async def process_trigger(trigger_name: str, document_metadata: dict):
     filename = document_metadata.get("filename", "")
     doc_id = document_metadata.get("id", "")
     
+    if trigger_name == "on_upload":
+        # -> PHASE 3: Event-Driven Typing <-
+        # We classify the document to know what we are dealing with.
+        from vector_store import get_chunks_for_file
+        from llm import classify_document
+        
+        chunks = await get_chunks_for_file(filename, max_chunks=3)
+        if chunks:
+            doc_type = classify_document(chunks)
+            await db.documents.update_one(
+                {"_id": doc_id},
+                {"$set": {"document_type": doc_type}}
+            )
+            print(f"🧠 AI Classifier: Detected {filename} as '{doc_type}'")
+    
     # STEP 1: Query MongoDB for all workflows listening for this specific trigger.
     # If trigger_name is "on_upload", we fetch all upload automations.
     cursor = db.workflows.find({"trigger": trigger_name})

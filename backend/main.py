@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from utils import extract_text_from_pdf, chunk_text
 from vector_store import add_chunks_to_db, search_db, retrieve_and_rerank, get_chunks_for_file
-from llm import generate_answer, generate_summary, generate_quiz, generate_flashcards
+from llm import generate_answer, generate_summary, generate_quiz, generate_flashcards, extract_resume_skills, score_resume_match, extract_paper_claims
 from database import documents_collection, db
 from models import DocumentMetadata
 from fastapi import BackgroundTasks
@@ -234,7 +234,12 @@ async def ask_question(payload: dict):
 
     # 2. Generate Answer
     final_answer = generate_answer(question=question, retrieved_chunks=retrieved_docs)
-    sources = [f"{chunk['source']} (Page {chunk.get('page', 'Unknown')}) - Score: {chunk['rerank_score']:.2f}" for chunk in retrieved_docs]
+    sources = [{
+        "source": chunk["source"],
+        "page": chunk.get("page", "Unknown"),
+        "score": round(chunk["rerank_score"], 2),
+        "text": chunk["text"]
+    } for chunk in retrieved_docs]
     
     # 3. SAVE TO CHAT HISTORY IN MONGODB
     await db.documents.update_one(
@@ -254,6 +259,48 @@ async def ask_question(payload: dict):
         "Answer": final_answer,
         "Sources": sources
     }
+
+@app.post("/task/{task_type}")
+async def run_specialized_task(task_type: str, payload: dict):
+    document_id = payload.get("document_id")
+    if not document_id:
+        return {"error": "document_id is required"}
+        
+    doc = await db.documents.find_one({"_id": document_id})
+    if not doc:
+        return {"error": "Document not found"}
+        
+    filename = doc.get("filename")
+    chunks = await get_chunks_for_file(filename, max_chunks=20)
+    chunk_texts = chunks
+    
+    try:
+        if task_type == "extract_skills":
+            result = extract_resume_skills(chunk_texts)
+        elif task_type == "score_resume":
+            result = score_resume_match(chunk_texts)
+        elif task_type == "extract_claims":
+            result = extract_paper_claims(chunk_texts)
+        else:
+            return {"error": "Invalid task type"}
+            
+        # Clean markdown backticks to prevent JSON parsing errors
+        result = result.replace("```json", "").replace("```", "").strip()
+            
+        # Add to chat history
+        await db.documents.update_one(
+            {"_id": document_id},
+            {"$push": {
+                "chat_history": {
+                    "role": "assistant", 
+                    "type": task_type, 
+                    "data": {task_type: json.loads(result)} if result.startswith('{') or result.startswith('[') else {"raw_text": result}
+                }
+            }}
+        )
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.get("/history/{document_id}")
 async def get_chat_history(document_id: str):

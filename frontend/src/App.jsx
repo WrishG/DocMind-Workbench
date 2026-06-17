@@ -4,6 +4,7 @@ import { apiClient } from './api/client';
 import UploadZone from './components/UploadZone';
 import ChatPanel from './components/ChatPanel';
 import ThemeToggle from './components/ThemeToggle';
+import Dashboard from './components/Dashboard';
 
 function App() {
   const { documents, setDocuments, activeDocument, setActiveDocument, theme } = useStore();
@@ -20,7 +21,7 @@ function App() {
         const res = await apiClient.get('/documents');
         setDocuments(res.data);
         if (res.data.length > 0 && !activeDocument) {
-          setActiveDocument(res.data[0]);
+          // Do not auto-select, allow the user to see the Dashboard
         }
       } catch (err) {
         console.error("Failed to fetch documents", err);
@@ -166,22 +167,7 @@ function App() {
         {/* Chat / Workspace */}
         <div className="flex-1 overflow-hidden">
           {!activeDocument ? (
-            <div className="h-full flex flex-col items-center justify-center animate-fade-in px-6">
-              <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-brand-100 to-brand-200 dark:from-brand-950/50 dark:to-brand-900/30 flex items-center justify-center mb-6 shadow-sm shadow-brand-500/10">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-brand-600 dark:text-brand-400">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                  <polyline points="14 2 14 8 20 8"/>
-                  <line x1="16" y1="13" x2="8" y2="13"/>
-                  <line x1="16" y1="17" x2="8" y2="17"/>
-                </svg>
-              </div>
-              <h2 className="text-xl font-semibold text-surface-800 dark:text-surface-100 mb-2">
-                Welcome to DocMind Workbench
-              </h2>
-              <p className="text-surface-400 dark:text-surface-500 max-w-sm text-center text-sm leading-relaxed">
-                Upload a document to start analyzing with AI-powered intelligence.
-              </p>
-            </div>
+            <Dashboard />
           ) : (
             <ChatPanel />
           )}
