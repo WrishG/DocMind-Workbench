@@ -41,6 +41,18 @@ def generate_answer(question: str, retrieved_chunks: list[dict]) -> str:
     return response.text
 
 
+def generate_embeddings(texts: list[str]) -> list[list[float]]:
+    """Uses Gemini API to generate embeddings to completely offload memory from Render Free."""
+    response = client.models.embed_content(
+        model="text-embedding-004",
+        contents=texts
+    )
+    # The API returns a list of EmbedContentResponse objects
+    # Handle single string case or list of strings
+    if not isinstance(response.embeddings, list):
+        return [response.embeddings.values]
+    
+    return [e.values for e in response.embeddings]
 # ─────────────────────────────────────────────────────────────
 # TASK MODE PROMPTS
 #

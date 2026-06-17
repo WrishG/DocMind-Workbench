@@ -1,30 +1,17 @@
-from sentence_transformers import CrossEncoder, SentenceTransformer
 from rank_bm25 import BM25Okapi
 from database import db
 import asyncio
-import gc
-import torch
-
-# Throttle PyTorch to use exactly 1 CPU thread to save memory on tiny servers
-torch.set_num_threads(1)
-
-# 1. Initialize our models
-# We use sentence_transformers instead of chromadb's built-in wrapper
-reranker_model = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+from llm import generate_embeddings
 
 # ─────────────────────────────────────────────────────────────
 # DATABASE INSERTION
 # ─────────────────────────────────────────────────────────────
 async def add_chunks_to_db(filename: str, chunks: list[dict]):
-    """Takes chunk dictionaries, embeds the text, and saves to MongoDB."""
+    """Takes chunk dictionaries, embeds the text using Gemini, and saves to MongoDB."""
     
-    # Generate embeddings in tiny batches to prevent RAM spikes (OOM on Render Free)
+    # Generate embeddings via API (ZERO local memory usage!)
     texts = [chunk["text"] for chunk in chunks]
-    embeddings = embedding_model.encode(texts, batch_size=2).tolist()
-    
-    # Aggressively clear PyTorch memory after embedding
-    gc.collect()
+    embeddings = generate_embeddings(texts)
     
     # Prepare documents for MongoDB
     db_documents = []
@@ -33,7 +20,7 @@ async def add_chunks_to_db(filename: str, chunks: list[dict]):
             "source": filename,
             "page": chunk["page"],
             "text": chunk["text"],
-            "embedding": embeddings[i] # The vector!
+            "embedding": embeddings[i] # 768-dimension Gemini vector!
         })
         
     # Insert into the db.chunks collection
@@ -67,45 +54,50 @@ async def rebuild_bm25():
     # BM25 requires the text to be split into individual words
     tokenized_corpus = [doc["text"].lower().split(" ") for doc in results]
     bm25_index = BM25Okapi(tokenized_corpus)
+    print(f"✅ BM25 Index rebuilt with {len(results)} chunks.")
 
-def keyword_search(query: str, n_results: int = 15):
-    """Searches using exact keyword matching (BM25)."""
-    if bm25_index is None:
+def keyword_search(query: str, n_results: int = 4):
+    """Searches the BM25 index for keyword matches."""
+    if bm25_index is None or not all_chunks_cache:
         return []
         
+    # Get the raw scores for all documents
     tokenized_query = query.lower().split(" ")
-    top_results = bm25_index.get_top_n(tokenized_query, all_chunks_cache, n=n_results)
+    scores = bm25_index.get_scores(tokenized_query)
     
-    formatted_results = []
-    for res in top_results:
-        formatted_results.append({
-            "text": res["text"],
-            "source": res["metadata"].get("source", "Unknown"),
-            "page": res["metadata"].get("page", "Unknown")
-        })
-        
-    return formatted_results
+    # Sort and get top N
+    top_n_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:n_results]
+    
+    retrieved_chunks = []
+    for i in top_n_indices:
+        if scores[i] > 0: # Only include chunks that actually matched a keyword
+            chunk_data = all_chunks_cache[i]
+            retrieved_chunks.append({
+                "text": chunk_data["text"],
+                "source": chunk_data["metadata"].get("source", "Unknown"),
+                "page": chunk_data["metadata"].get("page", "Unknown"),
+                "score": float(scores[i])
+            })
+            
+    return retrieved_chunks
 
 
 # ─────────────────────────────────────────────────────────────
-# VECTOR SEARCH
+# VECTOR SEARCH (MongoDB Atlas)
 # ─────────────────────────────────────────────────────────────
-async def search_db(query: str, n_results: int = 5):
-    """
-    Takes a user's question, converts it to a vector, 
-    and uses MongoDB Atlas Vector Search.
-    """
-    # 1. Embed the user's query
-    query_vector = embedding_model.encode([query])[0].tolist()
+async def search_db(query: str, n_results: int = 4):
+    """Performs Semantic Search using MongoDB Atlas Vector Search."""
     
-    # 2. Run Atlas Vector Search
-    # Note: This requires a vector index named 'vector_index' in Atlas
+    # Generate the query embedding using Gemini
+    query_embedding = generate_embeddings([query])[0]
+    
+    # Build the MongoDB Atlas Vector Search Pipeline
     pipeline = [
         {
             "$vectorSearch": {
                 "index": "vector_index",
                 "path": "embedding",
-                "queryVector": query_vector,
+                "queryVector": query_embedding,
                 "numCandidates": 100,
                 "limit": n_results
             }
@@ -143,10 +135,14 @@ async def search_db(query: str, n_results: int = 5):
 
 
 # ─────────────────────────────────────────────────────────────
-# HYBRID RETRIEVAL
+# HYBRID RETRIEVAL & RERANKING (RRF)
 # ─────────────────────────────────────────────────────────────
+def compute_rrf(rank: int, k: int = 60) -> float:
+    """Computes the Reciprocal Rank Fusion score."""
+    return 1.0 / (k + rank)
+
 async def retrieve_and_rerank(query: str, top_k_initial: int = 15, top_k_final: int = 4):
-    """Hybrid Search + Reranking Pipeline"""
+    """Hybrid Search using Reciprocal Rank Fusion (Zero Memory Overhead)"""
     
     # 1. Semantic Search (MongoDB Atlas)
     semantic_results = await search_db(query, n_results=top_k_initial)
@@ -154,24 +150,32 @@ async def retrieve_and_rerank(query: str, top_k_initial: int = 15, top_k_final: 
     # 2. Keyword Search (BM25)
     bm25_results = keyword_search(query, n_results=top_k_initial)
     
-    # 3. Combine them and remove duplicates
-    all_results = semantic_results + bm25_results
-    unique_results = {chunk["text"]: chunk for chunk in all_results}.values()
-    initial_results = list(unique_results)
+    # 3. Reciprocal Rank Fusion
+    rrf_scores = {}
+    chunk_data = {}
     
-    if not initial_results:
-        return []
+    # Process Semantic Results
+    for rank, chunk in enumerate(semantic_results):
+        text = chunk["text"]
+        chunk_data[text] = chunk
+        rrf_scores[text] = rrf_scores.get(text, 0.0) + compute_rrf(rank + 1)
         
-    # 4. Rerank them all in tiny batches to save memory
-    pairs = [[query, chunk["text"]] for chunk in initial_results]
-    scores = reranker_model.predict(pairs, batch_size=2)
-    gc.collect()
+    # Process BM25 Results
+    for rank, chunk in enumerate(bm25_results):
+        text = chunk["text"]
+        chunk_data[text] = chunk
+        rrf_scores[text] = rrf_scores.get(text, 0.0) + compute_rrf(rank + 1)
+        
+    # 4. Sort by final RRF score
+    sorted_chunks = sorted(rrf_scores.keys(), key=lambda t: rrf_scores[t], reverse=True)
     
-    for chunk, score in zip(initial_results, scores):
-        chunk["rerank_score"] = float(score)
+    final_results = []
+    for text in sorted_chunks[:top_k_final]:
+        chunk = chunk_data[text]
+        chunk["rerank_score"] = rrf_scores[text]
+        final_results.append(chunk)
         
-    initial_results.sort(key=lambda x: x["rerank_score"], reverse=True)
-    return initial_results[:top_k_final]
+    return final_results
 
 
 # ─────────────────────────────────────────────────────────────
