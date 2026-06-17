@@ -182,8 +182,16 @@ export default function ChatPanel() {
           {(msg.type === 'quiz' || msg.type === 'flashcards') && !msg.data?.quiz && !msg.data?.flashcards && msg.data?.raw_text && (
             <pre className="text-sm text-surface-700 dark:text-surface-300 whitespace-pre-wrap">{msg.data.raw_text}</pre>
           )}
+          
+          {/* Error fallback from backend tasks */}
+          {msg.data?.error && (
+            <div className="flex items-start space-x-3 mt-2">
+              <span className="text-lg mt-0.5">⚠️</span>
+              <p className="text-sm text-red-600 dark:text-red-400">{msg.data.error}</p>
+            </div>
+          )}
 
-          {/* Error with retry */}
+          {/* Error with retry (system level errors) */}
           {msg.type === 'error' && (
             <div className="flex items-start space-x-3">
               <span className="text-lg mt-0.5">⚠️</span>
