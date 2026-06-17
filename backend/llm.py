@@ -35,7 +35,7 @@ def generate_answer(question: str, retrieved_chunks: list[dict]) -> str:
 
     # 3. Call the API
     response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model='gemini-flash-latest',
         contents=prompt,
     )
     
@@ -111,7 +111,7 @@ def generate_summary(chunks: list[str]) -> str:
     """
 
     response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model='gemini-flash-latest',
         contents=prompt,
     )
     return response.text
@@ -151,7 +151,7 @@ def generate_quiz(chunks: list[str]) -> str:
     """
 
     response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model='gemini-flash-latest',
         contents=prompt,
     )
     return response.text
@@ -187,7 +187,7 @@ def generate_flashcards(chunks: list[str]) -> str:
     """
 
     response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model='gemini-flash-latest',
         contents=prompt,
     )
     return response.text
