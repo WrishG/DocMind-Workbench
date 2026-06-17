@@ -44,7 +44,7 @@ def generate_answer(question: str, retrieved_chunks: list[dict]) -> str:
 def generate_embeddings(texts: list[str]) -> list[list[float]]:
     """Uses Gemini API to generate embeddings to completely offload memory from Render Free."""
     response = client.models.embed_content(
-        model="text-embedding-004",
+        model="gemini-embedding-2",
         contents=texts
     )
     # The API returns a list of EmbedContentResponse objects
