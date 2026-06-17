@@ -1,4 +1,5 @@
 import os
+import requests
 from google import genai
 from dotenv import load_dotenv
 
@@ -42,17 +43,40 @@ def generate_answer(question: str, retrieved_chunks: list[dict]) -> str:
 
 
 def generate_embeddings(texts: list[str]) -> list[list[float]]:
-    """Uses Gemini API to generate embeddings to completely offload memory from Render Free."""
-    response = client.models.embed_content(
-        model="gemini-embedding-2",
-        contents=texts
-    )
-    # The API returns a list of EmbedContentResponse objects
-    # Handle single string case or list of strings
-    if not isinstance(response.embeddings, list):
-        return [response.embeddings.values]
+    """Uses Gemini REST API directly to perform BATCH embeddings.
+    This bypasses an SDK bug where passing a list returns a single concatenated embedding,
+    and safely batches requests in groups of 100 to avoid rate limits.
+    """
+    api_key = os.environ.get("GEMINI_API_KEY")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:batchEmbedContents?key={api_key}"
     
-    return [e.values for e in response.embeddings]
+    all_embeddings = []
+    
+    # Gemini API has a strict limit on maximum items per batch request
+    batch_size = 100
+    for i in range(0, len(texts), batch_size):
+        batch_texts = texts[i:i+batch_size]
+        
+        payload = {
+            "requests": [
+                {
+                    "model": "models/gemini-embedding-2",
+                    "content": {"parts": [{"text": t}]}
+                }
+                for t in batch_texts
+            ]
+        }
+        
+        response = requests.post(url, json=payload)
+        if response.status_code != 200:
+            print(f"⚠️ Error from Gemini API: {response.text}")
+            raise Exception("Failed to generate embeddings from Gemini")
+            
+        data = response.json()
+        for emb_obj in data.get("embeddings", []):
+            all_embeddings.append(emb_obj.get("values", []))
+            
+    return all_embeddings
 # ─────────────────────────────────────────────────────────────
 # TASK MODE PROMPTS
 #
