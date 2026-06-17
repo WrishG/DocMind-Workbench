@@ -2,6 +2,11 @@ from sentence_transformers import CrossEncoder, SentenceTransformer
 from rank_bm25 import BM25Okapi
 from database import db
 import asyncio
+import gc
+import torch
+
+# Throttle PyTorch to use exactly 1 CPU thread to save memory on tiny servers
+torch.set_num_threads(1)
 
 # 1. Initialize our models
 # We use sentence_transformers instead of chromadb's built-in wrapper
@@ -14,9 +19,12 @@ embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 async def add_chunks_to_db(filename: str, chunks: list[dict]):
     """Takes chunk dictionaries, embeds the text, and saves to MongoDB."""
     
-    # Generate embeddings for all chunks at once
+    # Generate embeddings in tiny batches to prevent RAM spikes (OOM on Render Free)
     texts = [chunk["text"] for chunk in chunks]
-    embeddings = embedding_model.encode(texts).tolist()
+    embeddings = embedding_model.encode(texts, batch_size=2).tolist()
+    
+    # Aggressively clear PyTorch memory after embedding
+    gc.collect()
     
     # Prepare documents for MongoDB
     db_documents = []
@@ -154,9 +162,10 @@ async def retrieve_and_rerank(query: str, top_k_initial: int = 15, top_k_final: 
     if not initial_results:
         return []
         
-    # 4. Rerank them all
+    # 4. Rerank them all in tiny batches to save memory
     pairs = [[query, chunk["text"]] for chunk in initial_results]
-    scores = reranker_model.predict(pairs)
+    scores = reranker_model.predict(pairs, batch_size=2)
+    gc.collect()
     
     for chunk, score in zip(initial_results, scores):
         chunk["rerank_score"] = float(score)
