@@ -4,9 +4,7 @@ import { useStore } from '../store/useStore';
 const Dashboard = () => {
   const { documents, setActiveDocument } = useStore();
 
-  // Metrics calculation
   const totalDocs = documents.length;
-  const memorySaved = totalDocs * 350; // 350MB per doc context using Serverless
 
   return (
     <div className="flex-1 overflow-y-auto bg-surface-50 dark:bg-surface-950 p-8 h-full">
@@ -26,10 +24,6 @@ const Dashboard = () => {
             <div className="bg-white dark:bg-surface-900 px-5 py-3 rounded-2xl border border-surface-200 dark:border-surface-800 shadow-sm">
               <p className="text-[11px] font-bold text-surface-400 dark:text-surface-500 uppercase tracking-widest">Docs Processed</p>
               <p className="text-2xl font-bold text-brand-500">{totalDocs}</p>
-            </div>
-            <div className="bg-white dark:bg-surface-900 px-5 py-3 rounded-2xl border border-surface-200 dark:border-surface-800 shadow-sm">
-              <p className="text-[11px] font-bold text-surface-400 dark:text-surface-500 uppercase tracking-widest">Server RAM Saved</p>
-              <p className="text-2xl font-bold text-emerald-500">{memorySaved} MB</p>
             </div>
           </div>
         </div>
