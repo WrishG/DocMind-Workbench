@@ -45,7 +45,12 @@ async def upload_pdf(background_tasks: BackgroundTasks,file: UploadFile = File(.
     chunks = chunk_text(pages, chunk_size=500, overlap=50)
     
     # 1. AI Layer: Save math to MongoDB
-    await add_chunks_to_db(file.filename, chunks)
+    try:
+        await add_chunks_to_db(file.filename, chunks)
+    except Exception as e:
+        # If Gemini API fails (e.g. Rate Limit 429 or 503), catch it gracefully!
+        print(f"Upload failed during embedding generation: {e}")
+        return {"error": "Gemini API is currently overloaded or rate-limited. Please try uploading again in a minute."}
 
     # 2. FSD Layer: Save metadata to MongoDB
     doc_record = DocumentMetadata(

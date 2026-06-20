@@ -31,13 +31,18 @@ export default function UploadZone() {
     formData.append("file", file);
 
     try {
-      await apiClient.post('/upload', formData, {
+      const res = await apiClient.post('/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
+      
+      if (res.data.error) {
+        throw new Error(res.data.error);
+      }
+      
       await refreshDocuments();
     } catch (error) {
       console.error("Upload failed:", error);
-      alert("Failed to upload document.");
+      alert(error.message || "Failed to upload document.");
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
