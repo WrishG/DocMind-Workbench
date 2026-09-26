@@ -1,4 +1,3 @@
-from rank_bm25 import BM25Okapi
 from database import db
 import asyncio
 from llm import generate_embeddings
@@ -27,58 +26,51 @@ async def add_chunks_to_db(filename: str, chunks: list[dict]):
     await db.chunks.insert_many(db_documents)
     print(f"✅ Successfully embedded and saved {len(chunks)} chunks from {filename} to MongoDB Atlas")
     
-    # Rebuild the BM25 index since we added new data
-    await rebuild_bm25()
+    
 
 
 # ─────────────────────────────────────────────────────────────
-# KEYWORD SEARCH (BM25)
+# KEYWORD SEARCH (Lucene)
 # ─────────────────────────────────────────────────────────────
-bm25_index = None
-all_chunks_cache = []
 
-async def rebuild_bm25():
-    """Fetches all chunks from MongoDB and builds the keyword search index."""
-    global bm25_index, all_chunks_cache
+async def keyword_search_db(query: str, n_results: int = 4):
+    """Searches using MongoDB Atlas Lucene Keyword Search."""
+    pipeline = [
+        {
+            "$search": {
+                "index": "Keyword_index", # This must match the name you used on the dashboard!
+                "text": {
+                    "query": query,
+                    "path": "text"
+                }
+            }
+        },
+        {
+            "$limit": n_results
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "text": 1,
+                "source": 1,
+                "page": 1,
+                "score": {"$meta": "searchScore"}
+            }
+        }
+    ]
     
-    # Get all chunks from MongoDB
-    cursor = db.chunks.find({}, {"text": 1, "source": 1, "page": 1})
-    results = await cursor.to_list(length=10000)
-    
-    if not results:
-        return
-        
-    # Cache them so we can retrieve the actual text/metadata later
-    all_chunks_cache = [{"text": doc["text"], "metadata": {"source": doc["source"], "page": doc["page"]}} for doc in results]
-    
-    # BM25 requires the text to be split into individual words
-    tokenized_corpus = [doc["text"].lower().split(" ") for doc in results]
-    bm25_index = BM25Okapi(tokenized_corpus)
-    print(f"✅ BM25 Index rebuilt with {len(results)} chunks.")
-
-def keyword_search(query: str, n_results: int = 4):
-    """Searches the BM25 index for keyword matches."""
-    if bm25_index is None or not all_chunks_cache:
-        return []
-        
-    # Get the raw scores for all documents
-    tokenized_query = query.lower().split(" ")
-    scores = bm25_index.get_scores(tokenized_query)
-    
-    # Sort and get top N
-    top_n_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:n_results]
+    cursor = db.chunks.aggregate(pipeline)
+    results = await cursor.to_list(length=n_results)
     
     retrieved_chunks = []
-    for i in top_n_indices:
-        if scores[i] > 0: # Only include chunks that actually matched a keyword
-            chunk_data = all_chunks_cache[i]
-            retrieved_chunks.append({
-                "text": chunk_data["text"],
-                "source": chunk_data["metadata"].get("source", "Unknown"),
-                "page": chunk_data["metadata"].get("page", "Unknown"),
-                "score": float(scores[i])
-            })
-            
+    for doc in results:
+        retrieved_chunks.append({
+            "text": doc["text"],
+            "source": doc.get("source", "Unknown"),
+            "page": doc.get("page", "Unknown"),
+            "score": float(doc.get("score", 0.0))
+        })
+        
     return retrieved_chunks
 
 
@@ -147,8 +139,8 @@ async def retrieve_and_rerank(query: str, top_k_initial: int = 15, top_k_final: 
     # 1. Semantic Search (MongoDB Atlas)
     semantic_results = await search_db(query, n_results=top_k_initial)
     
-    # 2. Keyword Search (BM25)
-    bm25_results = keyword_search(query, n_results=top_k_initial)
+    # 2. Keyword Search (MongoDB Atlas Lucene)
+    bm25_results = await keyword_search_db(query, n_results=top_k_initial)
     
     # 3. Reciprocal Rank Fusion
     rrf_scores = {}
